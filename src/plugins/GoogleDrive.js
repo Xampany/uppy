@@ -17,6 +17,7 @@ export default class Google extends Plugin {
 
     this.files = []
 
+    // this.core.socket.on('')
     // Logic
     this.addFile = this.addFile.bind(this)
     this.getFolder = this.getFolder.bind(this)
@@ -38,53 +39,6 @@ export default class Google extends Plugin {
 
     // merge default options with the ones set by user
     this.opts = Object.assign({}, defaultOptions, opts)
-
-    const host = this.opts.host.replace(/^https?:\/\//, '')
-
-    this.socket = this.core.initSocket({
-      target: 'ws://' + host + '/'
-    })
-
-    this.socket.on('google.auth.pass', () => {
-      console.log('google.auth.pass')
-      this.getFolder(this.core.getState().googleDrive.directory.id)
-    })
-
-    this.socket.on('uppy.debug', (payload) => {
-      console.log('GOOGLE DEBUG:')
-      console.log(payload)
-    })
-
-    this.socket.on('google.list.ok', (data) => {
-      console.log('google.list.ok')
-      let folders = []
-      let files = []
-      data.items.forEach((item) => {
-        if (item.mimeType === 'application/vnd.google-apps.folder') {
-          folders.push(item)
-        } else {
-          files.push(item)
-        }
-      })
-
-      this.updateState({
-        folders,
-        files,
-        authenticated: true
-      })
-    })
-
-    this.socket.on('google.list.fail', (data) => {
-      console.log('google.list.fail')
-      console.log(data)
-    })
-
-    this.socket.on('google.auth.fail', () => {
-      console.log('google.auth.fail')
-      this.updateState({
-        authenticated: false
-      })
-    })
   }
 
   install () {
@@ -246,14 +200,16 @@ export default class Google extends Plugin {
 
   addFile (file) {
     const tagFile = {
-      source: this,
+      source: this.id,
       data: file,
       name: file.title,
-      type: this.getFileType(file),
+      type: file.mimeType,
+      isRemote: true,
       remote: {
-        action: 'google.get',
-        payload: {
-          id: file.id
+        host: this.opts.host,
+        url: `${this.opts.host}/google/get?fileId=${file.id}`,
+        body: {
+          fileId: file.id
         }
       }
     }

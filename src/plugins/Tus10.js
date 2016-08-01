@@ -1,5 +1,6 @@
 import Plugin from './Plugin'
 import tus from 'tus-js-client'
+import UppySocket from '../core/UppySocket'
 
 /**
  * Tus resumable file uploader
@@ -35,6 +36,7 @@ export default class Tus10 extends Plugin {
       const upload = new tus.Upload(file.data, {
 
         // TODO merge this.opts or this.opts.tus here
+        metadata: file.meta,
         resume: false,
         endpoint: this.opts.endpoint,
         onError: (error) => {
@@ -50,8 +52,7 @@ export default class Tus10 extends Plugin {
           })
         },
         onSuccess: () => {
-          file.uploadURL = upload.url
-          this.core.emitter.emit('upload-success', file)
+          this.core.emitter.emit('upload-success', file.id, upload.url)
 
           this.core.log(`Download ${upload.file.name} from ${upload.url}`)
           resolve(upload)
@@ -66,6 +67,61 @@ export default class Tus10 extends Plugin {
     })
   }
 
+  uploadRemote (file, current, total) {
+    return new Promise((resolve, reject) => {
+      console.log(file.remote.url)
+      fetch(file.remote.url, {
+        method: 'post',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(Object.assign({}, file.remote.body, {
+          target: this.opts.endpoint,
+          protocol: 'tus'
+        }))
+      })
+      .then((res) => {
+        if (res.status < 200 && res.status > 300) {
+          return reject(res.statusText)
+        }
+
+        res.json()
+        .then((data) => {
+          // get the host domain
+          var regex = /^(?:https?:\/\/)?(?:[^@\/\n]+@)?(?:www\.)?([^:\/\n]+)/
+          var host = regex.exec(file.remote.host)[1]
+
+          var token = data.token
+          var socket = new UppySocket({
+            target: `ws://${host}:3121/api/${token}`
+          })
+
+          socket.on('progress', (progressData) => {
+            if (progressData.complete) {
+              this.core.log(`Remote upload of '${file.name}' successful`)
+              this.core.emitter.emit('upload-success', file)
+              return resolve('Success')
+            }
+
+            if (progressData.progress) {
+              this.core.log(`Upload progress: ${progressData.progress}`)
+
+              // Dispatch progress event
+              this.core.emitter.emit('upload-progress', {
+                uploader: this,
+                id: file.id,
+                bytesUploaded: progressData.bytesUploaded,
+                bytesTotal: progressData.bytesTotal
+              })
+            }
+          })
+        })
+      })
+    })
+  }
+
   uploadFiles (files) {
     const uploaders = []
     files.forEach((file, index) => {
@@ -75,7 +131,7 @@ export default class Tus10 extends Plugin {
       if (!file.isRemote) {
         uploaders.push(this.upload(file, current, total))
       } else {
-        uploaders.push(this.upload(file, current, total))
+        uploaders.push(this.uploadRemote(file, current, total))
       }
     })
 
@@ -83,27 +139,6 @@ export default class Tus10 extends Plugin {
       return {
         uploadedCount: files.length
       }
-    })
-  }
-
-  uploadRemote (file, current, total) {
-    return new Promise((resolve, reject) => {
-      const payload = Object.assign({}, file.remote.payload, {
-        target: this.opts.endpoint,
-        protocol: 'tus'
-      })
-      this.core.socket.send(file.remote.action, payload)
-      this.core.socket.once('upload-success', () => {
-        console.log('success')
-        this.core.emitter.emit('upload-success', file)
-
-        this.core.emitter.emit('upload-progress', {
-          id: file.id,
-          percentage: 100
-        })
-
-        resolve()
-      })
     })
   }
 

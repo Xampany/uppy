@@ -3,6 +3,7 @@ import Translator from '../core/Translator'
 import prettyBytes from 'pretty-bytes'
 import yo from 'yo-yo'
 import ee from 'events'
+import deepFreeze from 'deep-freeze-strict'
 import UppySocket from './UppySocket'
 
 /**
@@ -24,7 +25,8 @@ export default class Core {
     this.opts = Object.assign({}, defaultOptions, opts)
 
     // Dictates in what order different plugin types are ran:
-    this.types = [ 'presetter', 'orchestrator', 'progressindicator', 'acquirer', 'uploader', 'presenter' ]
+    this.types = [ 'presetter', 'orchestrator', 'progressindicator',
+                    'acquirer', 'modifier', 'uploader', 'presenter', 'debugger']
 
     this.type = 'core'
 
@@ -33,6 +35,8 @@ export default class Core {
 
     this.translator = new Translator({locales: this.opts.locales})
     this.i18n = this.translator.translate.bind(this.translator)
+    this.getState = this.getState.bind(this)
+    this.updateMeta = this.updateMeta.bind(this)
     this.initSocket = this.initSocket.bind(this)
 
     this.emitter = new ee.EventEmitter()
@@ -53,10 +57,10 @@ export default class Core {
    * Iterate on all plugins and run `update` on them. Called each time when state changes
    *
    */
-  updateAll () {
+  updateAll (state) {
     Object.keys(this.plugins).forEach((pluginType) => {
       this.plugins[pluginType].forEach((plugin) => {
-        plugin.update()
+        plugin.update(state)
       })
     })
   }
@@ -66,11 +70,15 @@ export default class Core {
    *
    * @param {newState} object
    */
-  setState (newState) {
-    this.log('Setting state to: ')
+  setState (stateUpdate) {
+    const newState = Object.assign({}, this.state, stateUpdate)
+    this.emitter.emit('state-update', this.state, newState, stateUpdate)
+
+    this.state = newState
+    this.updateAll(this.state)
+
+    this.log('Updating state with: ')
     this.log(newState)
-    this.state = Object.assign({}, this.state, newState)
-    this.updateAll()
   }
 
   /**
@@ -79,31 +87,58 @@ export default class Core {
    *
    */
   getState () {
-    return this.state
+    return deepFreeze(this.state)
   }
 
-  addMeta (meta, fileID) {
-    if (typeof fileID === 'undefined') {
-      const updatedFiles = Object.assign({}, this.state.files)
-      for (let file in updatedFiles) {
-        updatedFiles[file].meta = meta
-      }
-      this.setState({files: updatedFiles})
-    }
+  updateMeta (data, fileID) {
+    // // if fileID is not specified, set meta data to all files
+    // if (typeof fileID === 'undefined') {
+    //   const updatedFiles = Object.assign({}, this.getState().files)
+    //   Object.keys(updatedFiles).forEach((file) => {
+    //     const newMeta = Object.assign({}, updatedFiles[file].meta, data)
+    //     updatedFiles[file] = Object.assign({}, updatedFiles[file], {
+    //       meta: newMeta
+    //     })
+    //   })
+    //   this.setState({files: updatedFiles})
+    //
+    // // if fileID is specified, set meta to that file
+    // } else {
+    //   const updatedFiles = Object.assign({}, this.getState().files)
+    //   const newMeta = Object.assign({}, updatedFiles[fileID].meta, data)
+    //   updatedFiles[fileID] = Object.assign({}, updatedFiles[fileID], {
+    //     meta: newMeta
+    //   })
+    //   this.setState({files: updatedFiles})
+    // }
+
+    const updatedFiles = Object.assign({}, this.getState().files)
+    const newMeta = Object.assign({}, updatedFiles[fileID].meta, data)
+    updatedFiles[fileID] = Object.assign({}, updatedFiles[fileID], {
+      meta: newMeta
+    })
+    this.setState({files: updatedFiles})
   }
 
   addFile (file) {
     const updatedFiles = Object.assign({}, this.state.files)
 
-    const fileType = file.type.split('/')
+    const fileType = Utils.getFileType(file) ? Utils.getFileType(file).split('/') : ['', '']
     const fileTypeGeneral = fileType[0]
     const fileTypeSpecific = fileType[1]
+    const fileExtension = Utils.getFileNameAndExtension(file.name)[1]
+    const isRemote = file.isRemote || false
+
     const fileID = Utils.generateFileID(file.name)
 
     updatedFiles[fileID] = {
       source: file.source || '',
       id: fileID,
-      name: file.name,
+      name: file.name || 'noname',
+      extension: fileExtension || '',
+      meta: {
+        name: file.name || 'noname'
+      },
       type: {
         general: fileTypeGeneral,
         specific: fileTypeSpecific
@@ -112,24 +147,32 @@ export default class Core {
       progress: 0,
       totalSize: file.data.size ? prettyBytes(file.data.size) : '?',
       uploadedSize: 0,
-      isRemote: file.isRemote || false,
-      remote: file.remote
+      isRemote: isRemote,
+      remote: file.remote || ''
     }
 
     this.setState({files: updatedFiles})
 
-    if (fileTypeGeneral === 'image') {
-      // this.addImgPreviewToFile(updatedFiles[fileID])
-      Utils.readImage(updatedFiles[fileID].data, (imgEl) => {
+    if (fileTypeGeneral === 'image' && !isRemote) {
+      Utils.readImage(updatedFiles[fileID].data, (err, imgEl) => {
+        if (err) {
+          return this.log(err)
+        }
         const newImageWidth = 200
         const newImageHeight = Utils.getProportionalImageHeight(imgEl, newImageWidth)
         const resizedImgSrc = Utils.resizeImage(imgEl, newImageWidth, newImageHeight)
 
-        const updatedFiles = Object.assign({}, this.state.files)
-        updatedFiles[fileID].previewEl = yo`<img alt="${file.name}" src="${resizedImgSrc}">`
+        const updatedFiles = Object.assign({}, this.getState().files)
+        const updatedFile = Object.assign({}, updatedFiles[fileID], {
+          previewEl: yo`<img alt="${file.name}" src="${resizedImgSrc}">`,
+          preview: resizedImgSrc
+        })
+        updatedFiles[fileID] = updatedFile
         this.setState({files: updatedFiles})
       })
     }
+
+    this.emitter.emit('file-added', fileID)
 
     if (this.opts.autoProceed) {
       this.emitter.emit('next')
@@ -158,9 +201,12 @@ export default class Core {
       let percentage = (data.bytesUploaded / data.bytesTotal * 100).toFixed(2)
       percentage = Math.round(percentage)
 
-      const updatedFiles = Object.assign({}, this.state.files)
-      updatedFiles[data.id].progress = percentage
-      updatedFiles[data.id].uploadedSize = data.bytesUploaded ? prettyBytes(data.bytesUploaded) : '?'
+      const updatedFiles = Object.assign({}, this.getState().files)
+      const updatedFile = Object.assign({}, updatedFiles[data.id], {
+        progress: percentage,
+        uploadedSize: data.bytesUploaded ? prettyBytes(data.bytesUploaded) : '?'
+      })
+      updatedFiles[data.id] = updatedFile
 
       const inProgress = Object.keys(updatedFiles).map((file) => {
         return file.progress !== 0
@@ -182,14 +228,16 @@ export default class Core {
       })
     })
 
-    // `upload-success` adds successfully uploaded file to `state.uploadedFiles`
-    // and fires `remove-file` to remove it from `state.files`
-    this.emitter.on('upload-success', (file) => {
-      const updatedFiles = Object.assign({}, this.state.files)
-      updatedFiles[file.id] = file
-      this.setState({files: updatedFiles})
-      // this.log(this.state.uploadedFiles)
-      // this.emitter.emit('file-remove', file.id)
+    this.emitter.on('upload-success', (fileID, uploadURL) => {
+      const updatedFiles = Object.assign({}, this.getState().files)
+      const updatedFile = Object.assign({}, updatedFiles[fileID], {
+        uploadURL: uploadURL
+      })
+      updatedFiles[fileID] = updatedFile
+
+      this.setState({
+        files: updatedFiles
+      })
     })
   }
 
@@ -270,7 +318,7 @@ export default class Core {
     if (msg === `${msg}`) {
       console.log(`LOG: ${msg}`)
     } else {
-      console.log('LOG↓')
+      // console.log('LOG↓')
       console.dir(msg)
     }
     global.uppyLog = global.uppyLog + '\n' + 'DEBUG LOG: ' + msg
@@ -314,27 +362,6 @@ export default class Core {
     })
 
     return
-
-    // Each Plugin can have `run` and/or `install` methods.
-    // `install` adds event listeners and does some non-blocking work, useful for `progressindicator`,
-    // `run` waits for the previous step to finish (user selects files) before proceeding
-    // ['install', 'run'].forEach((method) => {
-    //   // First we select only plugins of current type,
-    //   // then create an array of runType methods of this plugins
-    //   const typeMethods = this.types.filter((type) => this.plugins[type])
-    //     .map((type) => this.runType.bind(this, type, method))
-    //   // Run waterfall of typeMethods
-    //   return Utils.promiseWaterfall(typeMethods)
-    //     .then((result) => {
-    //       // If results are empty, don't log upload results. Hasn't run yet.
-    //       if (result[0] !== undefined) {
-    //         this.log(result)
-    //         this.log('Upload result -> success!')
-    //         return result
-    //       }
-    //     })
-    //     .catch((error) => this.log('Upload result -> failed:', error))
-    // })
   }
 
   initSocket (opts) {
