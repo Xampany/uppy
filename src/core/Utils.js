@@ -1,5 +1,3 @@
-import mime from 'mime-types'
-
 /**
  * A collection of small utility functions that help with dom manipulation, adding listeners,
  * promises and other good things.
@@ -37,36 +35,10 @@ function isTouchDevice () {
 };
 
 /**
- * Shorter and fast way to select multiple nodes in the DOM
- * @param   { String|Array } selector - DOM selector or nodes list
- * @param   { Object } ctx - DOM node where the targets of our search will is located
- * @returns { Object } dom nodes found
+ * `querySelectorAll` that returns a normal array instead of fileList
  */
-export function $$ (selector, ctx) {
-  var els
-  if (typeof selector === 'string') {
-    els = (ctx || document).querySelectorAll(selector)
-  } else {
-    els = selector
-    return Array.prototype.slice.call(els)
-  }
-}
-
-/**
- * Shorter and fast way to select a single node in the DOM
- * @param   { String } selector - unique dom selector
- * @param   { Object } ctx - DOM node where the target of our search will is located
- * @returns { Object } dom node found
- */
-export function $ (selector, ctx) {
-  return (ctx || document).querySelector(selector)
-}
-
-function truncateString (string, length) {
-  if (string.length > length) {
-    return string.substring(0, length) + '…'
-  }
-  return string
+function qsa (selector, context) {
+  return Array.prototype.slice.call((context || document).querySelectorAll(selector) || [])
 }
 
 /**
@@ -159,16 +131,13 @@ function readImage (imgObject, cb) {
   reader.addEventListener('load', function (ev) {
     var imgSrcBase64 = ev.target.result
     var img = new Image()
-    img.addEventListener('load', function () {
-      return cb(null, img)
-    })
-    img.addEventListener('error', function (err) {
-      return cb(err)
-    })
+    img.onload = function () {
+      return cb(img)
+    }
     img.src = imgSrcBase64
   })
   reader.addEventListener('error', function (err) {
-    console.log('FileReader error ' + err)
+    console.log('FileReader error' + err)
   })
   reader.readAsDataURL(imgObject)
 }
@@ -177,21 +146,6 @@ function getProportionalImageHeight (img, newWidth) {
   var aspect = img.width / img.height
   var newHeight = Math.round(newWidth / aspect)
   return newHeight
-}
-
-function getFileType (file) {
-  if (file.type) {
-    return file.type
-  }
-  return mime.lookup(file.name)
-}
-
-// returns [fileName, fileExt]
-function getFileNameAndExtension (fullFileName) {
-  var re = /(?:\.([^.]+))?$/
-  var fileExt = re.exec(fullFileName)[1]
-  var fileName = fullFileName.replace('.' + fileExt, '')
-  return [fileName, fileExt]
 }
 
 /**
@@ -213,12 +167,11 @@ function resizeImage (img, width, height) {
   canvas.height = height
 
   // draw source image into the off-screen canvas:
-  // ctx.clearRect(0, 0, width, height)
   ctx.drawImage(img, 0, 0, width, height)
 
   // encode image to data-uri with base64 version of compressed image
   // canvas.toDataURL('image/jpeg', quality);  // quality = [0.0, 1.0]
-  return canvas.toDataURL('image/png')
+  return canvas.toDataURL()
 }
 
 export default {
@@ -229,14 +182,10 @@ export default {
   every,
   flatten,
   groupBy,
-  $,
-  $$,
+  qsa,
   extend,
   readImage,
   resizeImage,
   getProportionalImageHeight,
-  isTouchDevice,
-  getFileNameAndExtension,
-  truncateString,
-  getFileType
+  isTouchDevice
 }

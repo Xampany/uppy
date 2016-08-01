@@ -5,7 +5,7 @@ order: 0
 permalink: guide/
 ---
 
-> **Compatibility Note:** Uppy supports IE 10 and up
+> **Compatibility Note:** Uppy does not support IE8 and below.
 
 ## NPM
 

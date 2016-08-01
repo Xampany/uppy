@@ -77,6 +77,8 @@ export default class DragDrop extends Plugin {
         data: file
       })
     })
+
+    this.core.addMeta({bla: 'bla'})
   }
 
   handleInputChange (ev) {

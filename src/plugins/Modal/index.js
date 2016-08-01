@@ -1,27 +1,25 @@
 import Plugin from '../Plugin'
-// import Dashboard from './Dashboard.js'
+import Dashboard from './Dashboard.js'
 import Utils from '../../core/Utils'
+import { defaultTabIcon, closeIcon, localIcon } from './icons'
 import dragDrop from 'drag-drop'
 import yo from 'yo-yo'
-import FileItem from './FileItem'
-import FileCard from './FileCard'
-import { defaultTabIcon, closeIcon, localIcon, uploadIcon, dashboardBgIcon } from './icons'
 
 /**
  * Modal Dialog & Dashboard
  */
-export default class Dashboard extends Plugin {
+export default class Modal extends Plugin {
   constructor (core, opts) {
     super(core, opts)
-    this.id = 'Dashboard'
-    this.title = 'Dashboard'
+    this.id = 'Modal'
+    this.title = 'Modal'
     this.type = 'orchestrator'
 
     // set default options
     const defaultOptions = {
       target: 'body',
       defaultTabIcon: defaultTabIcon(),
-      panelSelectorPrefix: 'UppyDashboardContent-panel'
+      panelSelectorPrefix: 'UppyModalContent-panel'
     }
 
     // merge default options with the ones set by user
@@ -64,12 +62,10 @@ export default class Dashboard extends Plugin {
     }
 
     const modal = this.core.getState().modal
-    const newTargets = modal.targets.slice()
-    newTargets.push(target)
 
     this.core.setState({
       modal: Object.assign({}, modal, {
-        targets: newTargets
+        targets: modal.targets.concat([target])
       })
     })
 
@@ -78,16 +74,16 @@ export default class Dashboard extends Plugin {
 
   hideAllPanels () {
     const modal = this.core.getState().modal
+    const newModalTargets = modal.targets.slice()
 
-    const newTargets = modal.targets.map((target) => {
-      const isAcquirer = target.type === 'acquirer'
-      return Object.assign({}, target, {
-        isHidden: isAcquirer
-      })
+    newModalTargets.forEach((target) => {
+      if (target.type === 'acquirer') {
+        target.isHidden = true
+      }
     })
 
     this.core.setState({modal: Object.assign({}, modal, {
-      targets: newTargets
+      targets: newModalTargets
     })})
   }
 
@@ -116,34 +112,62 @@ export default class Dashboard extends Plugin {
   }
 
   hideModal () {
+    // Straightforward simple way
+    // this.core.state.modal.isHidden = true
+    // this.core.updateAll()
+
+    // The “right way”
     const modal = this.core.getState().modal
+
+    // const newTargets = modal.targets.map((target) => {
+    //   target.isHidden = true
+    //   return target
+    // })
+
+    // this.hideTabPanel()
 
     this.core.setState({
       modal: Object.assign({}, modal, {
         isHidden: true
+        // targets: newTargets
       })
     })
 
-    document.body.classList.remove('is-UppyDashboard-open')
+    document.body.classList.remove('is-UppyModal-open')
   }
 
   showModal () {
     const modal = this.core.getState().modal
 
+    // Show first acquirer plugin when modal is open
+    // let found = false
+    // const newTargets = modal.targets.map((target) => {
+    //   if (target.type === 'acquirer' && !found) {
+    //     found = true
+    //     target.focus()
+    //
+    //     return Object.assign({}, target, {
+    //       isHidden: false
+    //     })
+    //   }
+    //   return target
+    // })
+
     this.core.setState({
       modal: Object.assign({}, modal, {
         isHidden: false
+        // targets: newTargets
       })
     })
 
     // add class to body that sets position fixed
-    document.body.classList.add('is-UppyDashboard-open')
+    document.body.classList.add('is-UppyModal-open')
     // focus on modal inner block
     document.querySelector('*[tabindex="0"]').focus()
   }
 
   initEvents () {
-    const modal = document.querySelector(`${this.opts.target} .UppyDashboard`)
+    const modal = document.querySelector(`${this.opts.target} .UppyModal`)
     // Modal open button
     const showModalTrigger = document.querySelector(this.opts.trigger)
     showModalTrigger.addEventListener('click', this.showModal)
@@ -157,13 +181,13 @@ export default class Dashboard extends Plugin {
 
     // Close on click outside modal or close buttons
     document.addEventListener('click', (e) => {
-      if (e.target.classList.contains('js-UppyDashboard-close')) {
+      if (e.target.classList.contains('js-UppyModal-close')) {
         this.hideModal()
       }
     })
 
     // Drag Drop
-    dragDrop(`${this.opts.target} .UppyDashboard`, (files) => {
+    dragDrop(`${this.opts.target} .UppyModal`, (files) => {
       this.handleDrop(files)
       this.core.log(files)
     })
@@ -183,7 +207,7 @@ export default class Dashboard extends Plugin {
       const fileBlob = file.getAsFile()
       this.core.emitter.emit('file-add', {
         source: this.id,
-        name: file.name,
+        name: file.name || 'name',
         type: file.type,
         data: fileBlob
       })
@@ -191,29 +215,8 @@ export default class Dashboard extends Plugin {
   }
 
   actions () {
-    const emitter = this.core.emitter
-    emitter.on('file-add', () => {
+    this.core.emitter.on('file-add', () => {
       this.hideAllPanels()
-    })
-
-    emitter.on('file-card-open', (fileId) => {
-      const modal = this.core.getState().modal
-
-      this.core.setState({
-        modal: Object.assign({}, modal, {
-          showFileCard: fileId
-        })
-      })
-    })
-
-    emitter.on('file-card-close', () => {
-      const modal = this.core.getState().modal
-
-      this.core.setState({
-        modal: Object.assign({}, modal, {
-          showFileCard: false
-        })
-      })
     })
   }
 
@@ -229,7 +232,7 @@ export default class Dashboard extends Plugin {
       })
     })
 
-    // this.core.updateMeta({bla: 'bla'})
+    this.core.addMeta({bla: 'bla'})
   }
 
   handleInputChange (ev) {
@@ -238,7 +241,7 @@ export default class Dashboard extends Plugin {
     const files = Utils.toArray(ev.target.files)
 
     files.forEach((file) => {
-      this.core.log(file)
+      console.log(file)
       this.core.emitter.emit('file-add', {
         source: this.id,
         name: file.name,
@@ -254,11 +257,8 @@ export default class Dashboard extends Plugin {
     const autoProceed = this.core.opts.autoProceed
     const files = state.files
     const bus = this.core.emitter
-    const updateMeta = this.core.updateMeta
 
-    const showFileCard = state.modal.showFileCard
-
-    const modalTargets = state.modal.targets.slice()
+    const modalTargets = state.modal.targets
 
     const acquirers = modalTargets.filter((target) => {
       return target.type === 'acquirer'
@@ -271,117 +271,85 @@ export default class Dashboard extends Plugin {
     const isTouchDevice = Utils.isTouchDevice()
 
     const onSelect = (ev) => {
-      const input = document.querySelector(`${this.opts.target} .UppyDashboard-input`)
+      const input = document.querySelector(`${this.opts.target} .UppyModal-input`)
       input.click()
     }
 
-    const next = (ev) => {
-      bus.emit('next')
-    }
-
-    const selectedFiles = Object.keys(files).filter((file) => {
-      return files[file].progress !== 100
-    })
-    const totalFileCount = Object.keys(files).length
-    const selectedFileCount = Object.keys(selectedFiles).length
-    const isSomethingSelected = selectedFileCount > 0
-
-    return yo`<div class="Uppy UppyTheme--default UppyDashboard ${isTouchDevice ? 'Uppy--isTouchDevice' : ''}"
+    return yo`<div class="Uppy UppyTheme--default UppyModal ${isTouchDevice ? 'Uppy--isTouchDevice' : ''}"
                    aria-hidden="${state.modal.isHidden}"
                    aria-label="Uppy Dialog Window (Press escape to close)"
                    role="dialog">
-
-      <div class="UppyDashboard-overlay"
+      <div class="UppyModal-overlay"
                   onclick=${this.hideModal}></div>
-
-      <div class="UppyDashboard-inner" tabindex="0">
-        <div class="UppyDashboard-bar">
-          <h1 class="UppyDashboard-title">Upload files</h1>
+      <div class="UppyModal-inner" tabindex="0">
+        <div class="UppyModal-bar">
+          <h1 class="UppyModal-title">Upload files</h1>
         </div>
-
-        <button class="UppyDashboard-close" title="Close Uppy modal"
-                onclick=${this.hideModal}>${closeIcon()}</button>
-
-        <div class="UppyDashboardTabs">
-          <h3 class="UppyDashboardTabs-title">Drop files here, paste or import from</h3>
-          <nav>
-            <ul class="UppyDashboardTabs-list" role="tablist">
-              <li class="UppyDashboardTab">
-                <button class="UppyDashboardTab-btn UppyDashboard-focus"
-                        role="tab"
-                        tabindex="0"
-                        onclick=${onSelect}>
-                  ${localIcon()}
-                  <h5 class="UppyDashboardTab-name">Local Disk</h5>
-                </button>
-                <input class="UppyDashboard-input"
-                       type="file"
-                       name="files[]"
-                       multiple="true"
-                       value=""
-                       onchange=${this.handleInputChange.bind(this)} />
-              </li>
-              ${acquirers.map((target) => {
-                return yo`<li class="UppyDashboardTab">
-                  <button class="UppyDashboardTab-btn"
+        <button class="UppyModal-close"
+                title="Close Uppy modal"
+                onclick=${this.hideModal}>${closeIcon()}
+        </button>
+        <div class="UppyModal-innerWrap">
+          <div class="UppyModalTabs">
+            <h3 class="UppyModalTabs-title">Drop files here, paste or import from</h3>
+            <nav>
+              <ul class="UppyModalTabs-list" role="tablist">
+                <li class="UppyModalTab">
+                  <button class="UppyModalTab-btn UppyModal-focus"
                           role="tab"
                           tabindex="0"
-                          aria-controls="${this.opts.panelSelectorPrefix}--${target.id}"
-                          aria-selected="${target.isHidden ? 'false' : 'true'}"
-                          onclick=${this.showPanel.bind(this, target.id)}>
-                    ${target.icon}
-                    <h5 class="UppyDashboardTab-name">${target.name}</h5>
+                          onclick=${onSelect}>
+                    ${localIcon()}
+                    <h5 class="UppyModalTab-name">Local Disk</h5>
                   </button>
-                </li>`
-              })}
-            </ul>
-          </nav>
-        </div>
+                  <input class="UppyModal-input"
+                         type="file"
+                         name="files[]"
+                         multiple="true"
+                         value=""
+                         onchange=${this.handleInputChange.bind(this)} />
+                </li>
+                ${acquirers.map((target) => {
+                  return yo`<li class="UppyModalTab">
+                    <button class="UppyModalTab-btn"
+                            role="tab"
+                            tabindex="0"
+                            aria-controls="${this.opts.panelSelectorPrefix}--${target.id}"
+                            aria-selected="${target.isHidden ? 'false' : 'true'}"
+                            onclick=${this.showPanel.bind(this, target.id)}>
+                      ${target.icon}
+                      <h5 class="UppyModalTab-name">${target.name}</h5>
+                    </button>
+                  </li>`
+                })}
+              </ul>
+            </nav>
+          </div>
 
-        ${showFileCard ? FileCard(state.files[showFileCard], state.metaFields, bus, updateMeta) : null}
+          <div class="UppyModal-dashboard">
+            ${Dashboard(files, bus, autoProceed)}
+          </div>
 
-        <div class="UppyDashboard-files">
-          <ul class="UppyDashboard-filesInner">
-            ${totalFileCount === 0
-              ? yo`<div class="UppyDashboard-bgIcon">${dashboardBgIcon()}</div>`
-              : ''
-            }
-            ${Object.keys(files).map((fileID) => {
-              return FileItem(files[fileID], bus)
-            })}
-          </ul>
-          ${!autoProceed && isSomethingSelected
-            ? yo`<button class="UppyDashboard-upload"
-                           type="button"
-                           title="Upload"
-                           onclick=${next}>
-                      ${uploadIcon()}
-                      <sup class="UppyDashboard-uploadCount">${selectedFileCount}</sup>
-                   </button>`
-            : null
-          }
-        </div>
-
-        ${acquirers.map((target) => {
-          return yo`<div class="UppyDashboardContent-panel"
-                         id="${this.opts.panelSelectorPrefix}--${target.id}"
-                         role="tabpanel"
-                         aria-hidden="${target.isHidden}">
-             <div class="UppyDashboardContent-bar">
-               <h2 class="UppyDashboardContent-title">Import From ${target.name}</h2>
-               <button class="UppyDashboardContent-back"
-                       onclick=${this.hideAllPanels}>Done</button>
-             </div>
-            ${target.render(state)}
-          </div>`
-        })}
-
-        <div class="UppyDashboard-progressindicators">
-          ${progressindicators.map((target) => {
-            return target.render(state)
+          ${acquirers.map((target) => {
+            return yo`<div class="UppyModalContent-panel"
+                           id="${this.opts.panelSelectorPrefix}--${target.id}"
+                           role="tabpanel"
+                           aria-hidden="${target.isHidden}">
+               <div class="UppyModalContent-bar">
+                 <h2 class="UppyModalContent-title">Import From ${target.name}</h2>
+                 <button class="UppyModalContent-back"
+                         onclick=${this.hideAllPanels}>Back</button>
+               </div>
+              ${target.render(state)}
+            </div>`
           })}
-        </div>
 
+          <div class="UppyModal-progressindicators">
+            ${progressindicators.map((target) => {
+              return target.render(state)
+            })}
+          </div>
+        </div>
       </div>
     </div>`
   }
@@ -390,7 +358,6 @@ export default class Dashboard extends Plugin {
     // Set default state for Modal
     this.core.setState({modal: {
       isHidden: true,
-      showFileCard: false,
       targets: []
     }})
 
